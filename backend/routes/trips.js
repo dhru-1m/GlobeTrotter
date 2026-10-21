@@ -267,6 +267,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // @route   POST /api/trips
+// @route   POST /api/trips
 // @desc    Create new trip
 // @access  Private
 router.post('/', [
@@ -286,11 +287,12 @@ router.post('/', [
     if (!errors.isEmpty()) {
       return res.status(400).json({
         success: false,
+        message: errors.array().map(e => e.msg).join(', '),
         errors: errors.array()
       });
     }
 
-  const { name, description, startDate, endDate, coverPhoto, tags, destinations, activities } = req.body;
+    const { name, description, startDate, endDate, coverPhoto, tags, destinations, activities, budget } = req.body;
 
     // Validate dates
     if (new Date(startDate) >= new Date(endDate)) {
@@ -300,79 +302,127 @@ router.post('/', [
       });
     }
 
-    let trip = await Trip.create({
-      user: req.user.id,
-      name,
-      description,
-      startDate,
-      endDate,
-      coverPhoto,
-      tags
-    });
-
-    // Optional destinations
-    if (Array.isArray(destinations) && destinations.length > 0) {
-      const cleaned = destinations
-        .filter(d => d && d.city && d.country && d.arrivalDate && d.departureDate)
-        .map((d, idx) => ({
-          city: String(d.city).trim(),
-            country: String(d.country).trim(),
-            arrivalDate: d.arrivalDate,
-            departureDate: d.departureDate,
-            order: typeof d.order === 'number' ? d.order : idx
-        }))
-        .filter(d => {
-          // within trip date range
-          return new Date(d.arrivalDate) >= new Date(startDate) && new Date(d.departureDate) <= new Date(endDate);
-        });
-      if (cleaned.length) {
-        trip.destinations = cleaned;
-        await trip.save();
+    // Budget handling
+    let tripBudget = {
+      total: 5000,
+      currency: 'USD',
+      breakdown: {
+        accommodation: 2000,
+        transportation: 1000,
+        activities: 1000,
+        food: 750,
+        other: 250
       }
+    };
+    if (typeof budget === 'number' && budget > 0) {
+      tripBudget = {
+        total: budget,
+        currency: 'USD',
+        breakdown: {
+          accommodation: Math.round(budget * 0.4),
+          transportation: Math.round(budget * 0.2),
+          activities: Math.round(budget * 0.2),
+          food: Math.round(budget * 0.15),
+          other: Math.round(budget * 0.05)
+        }
+      };
+    } else if (budget && typeof budget === 'object' && budget.total) {
+      const bTotal = Number(budget.total) || 5000;
+      tripBudget = {
+        total: bTotal,
+        currency: budget.currency || 'USD',
+        breakdown: budget.breakdown || {
+          accommodation: Math.round(bTotal * 0.4),
+          transportation: Math.round(bTotal * 0.2),
+          activities: Math.round(bTotal * 0.2),
+          food: Math.round(bTotal * 0.15),
+          other: Math.round(bTotal * 0.05)
+        }
+      };
     }
 
-    // Optional activities
+    // Destinations sanitization
+    let cleanedDestinations = [];
+    if (Array.isArray(destinations) && destinations.length > 0) {
+      cleanedDestinations = destinations
+        .filter(d => d && (d.city || d.name))
+        .map((d, idx) => ({
+          city: String(d.city || d.name).trim(),
+          country: String(d.country || 'Unknown').trim(),
+          arrivalDate: d.arrivalDate ? new Date(d.arrivalDate) : new Date(startDate),
+          departureDate: d.departureDate ? new Date(d.departureDate) : new Date(endDate),
+          order: typeof d.order === 'number' ? d.order : idx + 1
+        }));
+    }
+
+    let trip = new Trip({
+      user: req.user.id,
+      name: name.trim(),
+      description: description || '',
+      startDate: new Date(startDate),
+      endDate: new Date(endDate),
+      coverPhoto: coverPhoto || '',
+      tags: Array.isArray(tags) ? tags : [],
+      budget: tripBudget,
+      destinations: cleanedDestinations
+    });
+
+    await trip.save();
+
+    // Activities handling
     let createdActivities = [];
     if (Array.isArray(activities) && activities.length > 0) {
-      const Activity = require('../models/Activity');
-      const primaryDestination = (trip.destinations && trip.destinations[0]) || null;
+      const primaryDestination = (trip.destinations && trip.destinations[0]) || { city: 'Destination', country: 'Unknown' };
+      const validTypes = ['sightseeing', 'food', 'adventure', 'culture', 'shopping', 'relaxation', 'transport', 'other'];
+
       const toInsert = activities
-        .filter(a => a && a.title && a.date && a.startTime)
-        .map(a => {
-          const duration = typeof a.duration === 'number' ? a.duration : (a.endTime ? (() => { // derive duration
-            const start = new Date(`2000-01-01T${a.startTime}:00`);
-            const end = new Date(`2000-01-01T${a.endTime}:00`);
-            return Math.max(0, Math.round((end - start)/60000));
-          })() : 0);
-          // compute endTime if not provided and duration present
-          let endTime = a.endTime;
-          if (!endTime && duration && duration > 0) {
-            const start = new Date(`2000-01-01T${a.startTime}:00`);
-            start.setMinutes(start.getMinutes() + duration);
-            const hh = String(start.getHours()).padStart(2,'0');
-            const mm = String(start.getMinutes()).padStart(2,'0');
-            endTime = `${hh}:${mm}`;
+        .filter(a => a && a.title)
+        .map((a, idx) => {
+          let duration = typeof a.duration === 'number' && a.duration > 0 ? a.duration : 60;
+          let startTime = '09:00';
+          if (a.startTime && /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(a.startTime)) {
+            startTime = a.startTime;
           }
+
+          // Ensure endTime > startTime
+          let endTime = a.endTime;
+          const [sh, sm] = startTime.split(':').map(Number);
+          const totalEndMin = sh * 60 + sm + duration;
+          const eh = Math.min(23, Math.floor(totalEndMin / 60));
+          const em = totalEndMin % 60;
+          const calcEnd = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
+
+          if (!endTime || !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(endTime) || endTime <= startTime) {
+            endTime = calcEnd > startTime ? calcEnd : '23:59';
+          }
+
+          let actDate = a.date ? new Date(a.date) : new Date(startDate);
+          if (isNaN(actDate.getTime())) actDate = new Date(startDate);
+
+          const actType = validTypes.includes(a.type) ? a.type : 'sightseeing';
+          const costVal = typeof a.cost === 'number' ? a.cost : (Number(a.cost?.amount) || 0);
+
           return {
             trip: trip._id,
             destination: {
-              city: a.destination?.city || primaryDestination?.city || 'Unknown',
-              country: a.destination?.country || primaryDestination?.country || 'Unknown'
+              city: a.destination?.city || primaryDestination.city,
+              country: a.destination?.country || primaryDestination.country
             },
             title: a.title,
             description: a.description || '',
-            type: a.type || 'other',
-            date: new Date(a.date),
-            startTime: a.startTime,
-            endTime: endTime || a.startTime,
-            duration: duration || 0,
+            type: actType,
+            date: actDate,
+            startTime,
+            endTime,
+            duration,
+            dayOrder: typeof a.dayOrder === 'number' ? a.dayOrder : idx + 1,
             location: { name: a.location?.name || a.title },
-            cost: { amount: a.cost || 0, currency: a.currency || 'USD', perPerson: true },
-            tags: Array.isArray(a.tags) ? a.tags : []
+            cost: { amount: costVal, currency: a.currency || 'USD', perPerson: true },
+            tags: Array.isArray(a.tags) ? a.tags : ['planned']
           };
-        })
-        .filter(a => a.date >= new Date(startDate) && a.date <= new Date(endDate));
-      if (toInsert.length) {
+        });
+
+      if (toInsert.length > 0) {
         try {
           createdActivities = await Activity.insertMany(toInsert);
         } catch (actErr) {
@@ -381,9 +431,9 @@ router.post('/', [
       }
     }
 
-    // Return trip plus limited activities list
     res.status(201).json({
       success: true,
+      message: 'Trip created successfully',
       data: {
         ...trip.toObject(),
         activities: createdActivities
@@ -393,7 +443,7 @@ router.post('/', [
     console.error('Create trip error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: error.message || 'Server error'
     });
   }
 });

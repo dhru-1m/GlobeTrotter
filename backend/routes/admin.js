@@ -144,15 +144,17 @@ router.get('/stats', auth, checkAdmin, async (req, res) => {
 router.get('/popular-cities', auth, checkAdmin, async (req, res) => {
   try {
     const popularCities = await Trip.aggregate([
-      { $match: { destination: { $exists: true, $ne: null } } },
+      // Unwind destinations array so each destination in a trip is counted
+      { $unwind: { path: '$destinations', preserveNullAndEmptyArrays: false } },
       { $group: { 
           _id: { 
-            city: '$destination.city',
-            country: '$destination.country'
+            city: '$destinations.city',
+            country: '$destinations.country'
           }, 
           count: { $sum: 1 } 
         } 
       },
+      { $match: { '_id.city': { $ne: '' } } },
       { $sort: { count: -1 } },
       { $limit: 10 }
     ]);
@@ -188,15 +190,31 @@ router.get('/popular-activities', auth, checkAdmin, async (req, res) => {
 router.get('/budget-distribution', auth, checkAdmin, async (req, res) => {
   try {
     const budgetDistribution = await Trip.aggregate([
-      { $match: { budget: { $exists: true, $ne: null } } },
+      {
+        $project: {
+          budgetAmount: {
+            $cond: {
+              if: { $isNumber: '$budget.total' },
+              then: '$budget.total',
+              else: {
+                $cond: {
+                  if: { $isNumber: '$budget' },
+                  then: '$budget',
+                  else: 0
+                }
+              }
+            }
+          }
+        }
+      },
       {
         $group: {
           _id: {
             $switch: {
               branches: [
-                { case: { $lt: ['$budget', 1000] }, then: 'Budget (< $1000)' },
-                { case: { $and: [{ $gte: ['$budget', 1000] }, { $lt: ['$budget', 3000] }] }, then: 'Mid-range ($1000-3000)' },
-                { case: { $gte: ['$budget', 3000] }, then: 'Luxury (> $3000)' }
+                { case: { $lt: ['$budgetAmount', 1000] }, then: 'Budget (< $1000)' },
+                { case: { $and: [{ $gte: ['$budgetAmount', 1000] }, { $lt: ['$budgetAmount', 3000] }] }, then: 'Mid-range ($1000-3000)' },
+                { case: { $gte: ['$budgetAmount', 3000] }, then: 'Luxury (> $3000)' }
               ],
               default: 'Unknown'
             }
@@ -211,7 +229,7 @@ router.get('/budget-distribution', auth, checkAdmin, async (req, res) => {
     const total = budgetDistribution.reduce((sum, item) => sum + item.count, 0);
     const distributionWithPercentages = budgetDistribution.map(item => ({
       ...item,
-      percentage: Math.round((item.count / total) * 100)
+      percentage: total > 0 ? Math.round((item.count / total) * 100) : 0
     }));
 
     res.json(distributionWithPercentages);
@@ -272,15 +290,15 @@ router.get('/recent-activity', auth, checkAdmin, async (req, res) => {
     // Get recent user registrations
     const recentUsers = await User.find({})
       .sort({ createdAt: -1 })
-      .limit(5)
+      .limit(6)
       .select('name createdAt');
 
     // Get recent trips
     const recentTrips = await Trip.find({})
       .populate('user', 'name')
       .sort({ createdAt: -1 })
-      .limit(5)
-      .select('title user createdAt destination');
+      .limit(6)
+      .select('name user createdAt destinations');
 
     // Combine and format activities
     const activities = [];
@@ -289,16 +307,19 @@ router.get('/recent-activity', auth, checkAdmin, async (req, res) => {
       activities.push({
         type: 'new_user',
         user: user.name,
-        action: 'Registered',
+        action: 'Registered an account',
+        createdAt: user.createdAt,
         time: getRelativeTime(user.createdAt)
       });
     });
 
     recentTrips.forEach(trip => {
+      const destCity = trip.destinations?.[0]?.city;
       activities.push({
         type: 'new_trip',
         user: trip.user ? trip.user.name : 'Unknown User',
-        action: `Created trip to ${trip.destination?.city || trip.title}`,
+        action: destCity ? `Created trip to ${destCity}` : `Created trip "${trip.name}"`,
+        createdAt: trip.createdAt,
         time: getRelativeTime(trip.createdAt)
       });
     });
@@ -338,9 +359,9 @@ router.get('/export/:type', auth, checkAdmin, async (req, res) => {
       
       case 'activities':
         data = await Activity.find({})
-          .populate('trip', 'title')
-          .select('name type duration cost trip createdAt');
-        headers = ['Name', 'Type', 'Duration', 'Cost', 'Trip', 'Created At'];
+          .populate('trip', 'name')
+          .select('title type duration cost trip createdAt');
+        headers = ['Title', 'Type', 'Duration (mins)', 'Cost (USD)', 'Trip', 'Created At'];
         break;
       
       default:
@@ -368,14 +389,14 @@ router.get('/export/:type', auth, checkAdmin, async (req, res) => {
             ? item.destinations[0]
             : null;
           const destStr = firstDest ? `${firstDest.city}, ${firstDest.country}` : '';
-          const budgetStr = item.budget ? JSON.stringify(item.budget) : '';
+          const budgetAmount = item.budget?.total !== undefined ? item.budget.total : (item.budget || 0);
           row = [
             item.name || '',
             item.user ? item.user.name : '',
             destStr,
             fmt(item.startDate).replace(/\//g,'-'),
             fmt(item.endDate).replace(/\//g,'-'),
-            budgetStr,
+            budgetAmount,
             item.status || '',
             fmt(item.createdAt).replace(/\//g,'-')
           ];
@@ -384,11 +405,11 @@ router.get('/export/:type', auth, checkAdmin, async (req, res) => {
         
         case 'activities':
           row = [
-            item.name || '',
+            item.title || item.name || '',
             item.type || '',
             item.duration || '',
-            item.cost || '',
-            item.trip ? item.trip.title : '',
+            item.cost?.amount !== undefined ? item.cost.amount : (item.cost || 0),
+            item.trip ? item.trip.name : '',
             item.createdAt ? item.createdAt.toISOString().split('T')[0] : ''
           ];
           break;

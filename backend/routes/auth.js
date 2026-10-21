@@ -164,8 +164,17 @@ router.post('/login', [
       });
     }
 
-    // Check password
-    const isMatch = await user.comparePassword(password);
+    // Check password (with whitespace tolerance)
+    let isMatch = await user.comparePassword(password);
+    if (!isMatch && typeof password === 'string') {
+      const trimmed = password.trim();
+      const noSpace = password.replace(/\s+/g, '');
+      if (trimmed !== password && await user.comparePassword(trimmed)) {
+        isMatch = true;
+      } else if (noSpace !== password && await user.comparePassword(noSpace)) {
+        isMatch = true;
+      }
+    }
     if (!isMatch) {
       return res.status(401).json({
         success: false,

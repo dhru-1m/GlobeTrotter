@@ -50,6 +50,9 @@ const tripBuilderSlice = createSlice({
       else state.cities.push(state.currentCity);
       state.currentCity = null;
     },
+    updateDetails: (state, action) => {
+      state.details = { ...(state.details || {}), ...action.payload };
+    },
     clearBuilder: (state) => {
       state.active = false;
       state.details = null;
@@ -66,6 +69,7 @@ export const {
   addPlaceToCurrentCity,
   removePlaceFromCurrentCity,
   saveCurrentCity,
+  updateDetails,
   clearBuilder,
 } = tripBuilderSlice.actions;
 
