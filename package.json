@@ -1,0 +1,32 @@
+{
+  "name": "globetrotter",
+  "version": "1.0.0",
+  "description": "A full-stack MERN travel planning application for creating personalized multi-city itineraries",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd backend && npm run dev",
+    "client": "cd frontend && npm start",
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "test": "cd backend && npm test && cd ../frontend && npm test"
+  },
+  "keywords": [
+    "travel",
+    "itinerary",
+    "mern",
+    "react",
+    "node",
+    "mongodb"
+  ],
+  "author": "GlobeTrotter Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2"
+  }
+}
