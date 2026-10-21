@@ -2,23 +2,11 @@
 ## __Problem Statement:__ _GlobeTrotter – Empowering Personalized Travel Planning_
 GlobeTrotter aims to be a personalized, intelligent platform that redefines travel planning. It empowers users to dream, design, and organize trips effortlessly with flexible, interactive tools. By enabling exploration of global destinations, visualizing itineraries, making cost-effective choices, and sharing plans within a community, it makes planning as exciting as the journey itself.
 
----
 
-### Demo video at: [demo](https://drive.google.com/file/d/1Xz20vnRqj74uZvVUq9tfKbSSNXmT9bFp/view?usp=sharing)
 
----
 
- ### <u>Team:</u> ___Epoch Wizards___
----
- <!-- ### <ins>__Team members with email__</ins>  -->
- 
-| Name | Email |  
-| :-------| -----|  
-| Aryan Vadhadiya | aryanvadhadiya1@gmail.com|
-| Aryan Dawra | aryandawra2020@gmail.com |
-| Het Patel | phet30440@gmail.com |
-| Hardatt Mangrola | hardattmangrola55@gmail.com|
-=======
+
+
 # GlobeTrotter - Multi-City Travel Planning Application
 
 A full-stack MERN (MongoDB, Express.js, React.js, Node.js) travel planning application that enables users to create, manage, and share personalized multi-city itineraries with activities, budgets, and timelines.
