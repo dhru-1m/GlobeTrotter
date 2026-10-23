@@ -3,7 +3,7 @@ import axios from 'axios';
 // Create axios instance
 const api = axios.create({
   baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
-  timeout: 20000,
+  timeout: 90000,
 });
 
 // Request interceptor
@@ -54,6 +54,7 @@ export const tripAPI = {
   updateTrip: (tripId, tripData) => api.put(`/trips/${tripId}`, tripData),
   deleteTrip: (tripId) => api.delete(`/trips/${tripId}`),
   getPublicTrip: (publicUrl) => api.get(`/trips/public/${publicUrl}`),
+  getPublicTrips: (params) => api.get('/trips/public', { params }),
   getPublicItinerary: (publicUrl) => api.get(`/trips/public/${publicUrl}/itinerary`),
   copyPublicTrip: (publicUrl) => api.post(`/trips/public/${publicUrl}/copy`),
   makePublic: (tripId) => api.post(`/trips/${tripId}/make-public`),
@@ -118,9 +119,10 @@ export const userAPI = {
 
 // Budget API
 export const budgetAPI = {
-  getBudget: (tripId) => api.get(`/budget/${tripId}`),
+  getBudget: (tripId, params) => api.get(`/budget/${tripId}`, { params }),
   updateBudget: (tripId, budgetData) => api.put(`/budget/${tripId}`, budgetData),
   generateAIBudget: (tripId, data) => api.post(`/budget/${tripId}/ai-generate`, data),
+  getForecast: (tripId, params) => api.get(`/budget/${tripId}/forecast`, { params }),
 };
 
 // Admin API

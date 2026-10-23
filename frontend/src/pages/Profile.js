@@ -419,7 +419,11 @@ const Profile = () => {
                         <MapPin className="w-5 h-5 text-gray-400" />
                         <div>
                           <p className="text-sm font-medium text-gray-500">Location</p>
-                          <p className="text-gray-900">{user.location}</p>
+                          <p className="text-gray-900">
+                            {typeof user.location === 'object'
+                              ? `${user.location.city || ''}${user.location.city && user.location.country ? ', ' : ''}${user.location.country || ''}`
+                              : user.location}
+                          </p>
                         </div>
                       </div>
                     )}

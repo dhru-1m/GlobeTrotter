@@ -53,7 +53,7 @@ const TripCalendar = () => {
 
   const fetchActivities = async () => {
     try {
-      const response = await activityAPI.getActivities({ trip: tripId });
+      const response = await activityAPI.getActivities({ tripId });
       setActivities(response.data.data || []);
     } catch (err) {
       console.error('Failed to fetch activities:', err);
@@ -88,6 +88,16 @@ const TripCalendar = () => {
     setSelectedActivity(null);
   };
 
+  const getActivitiesForDate = (dateStr) => {
+    if (itinerary?.itinerary?.[dateStr]) return itinerary.itinerary[dateStr];
+    if (itinerary?.days?.[dateStr]?.activities) return itinerary.days[dateStr].activities;
+    return activities.filter(a => {
+      if (!a.date) return false;
+      const d = (a.date instanceof Date) ? a.date : new Date(a.date);
+      return !isNaN(d.getTime()) && d.toISOString().split('T')[0] === dateStr;
+    });
+  };
+
   const handleDragEnd = async (result) => {
     if (!result.destination) return;
 
@@ -96,7 +106,7 @@ const TripCalendar = () => {
     // Handle reordering within the same day
     if (source.droppableId === destination.droppableId) {
       const date = source.droppableId;
-      const dayActivities = itinerary?.days?.[date]?.activities || [];
+      const dayActivities = getActivitiesForDate(date);
       
       const reorderedActivities = Array.from(dayActivities);
       const [removed] = reorderedActivities.splice(source.index, 1);
@@ -117,7 +127,8 @@ const TripCalendar = () => {
     else {
       const sourceDate = source.droppableId;
       const destDate = destination.droppableId;
-      const activityId = itinerary?.days?.[sourceDate]?.activities?.[source.index]?._id;
+      const sourceActivities = getActivitiesForDate(sourceDate);
+      const activityId = sourceActivities?.[source.index]?._id;
       
       if (activityId) {
         try {
@@ -126,6 +137,7 @@ const TripCalendar = () => {
           // Add to destination day
           await itineraryAPI.addActivityToDay(tripId, destDate, activityId);
           fetchItinerary();
+          fetchActivities();
         } catch (err) {
           console.error('Failed to move activity:', err);
         }

@@ -210,67 +210,42 @@ const CitySearch = () => {
           </p>
           <div className="bg-primary-50 p-4 rounded-lg border border-blue-200">
             <p className="text-blue-800 font-medium">
-              🚀 AI will generate comprehensive city data with <strong>15 most famous attractions</strong>, 
+              🚀 AI will generate comprehensive city data with <strong>10 most famous attractions</strong>, 
               costs in local currency, and detailed recommendations for any location you search!
             </p>
           </div>
         </div>
 
-        {/* Search and AI Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* AI-Powered Search */}
-          <div className="lg:col-span-2">
-            <div className="card p-6">
-              <h2 className="text-xl font-semibold mb-4 flex items-center">
-                <Search className="mr-2 text-primary-600" />
-                AI-Powered City Search
-              </h2>
+        {/* Search Section */}
+        <div className="mb-8">
+          <div className="card p-6">
+            <h2 className="text-xl font-semibold mb-4 flex items-center">
+              <Search className="mr-2 text-primary-600" />
+              AI-Powered City Search
+            </h2>
+            
+            <form onSubmit={handleSearch} className="space-y-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                <input
+                  type="text"
+                  placeholder="Type any city name in the world (e.g., Paris, Tokyo, New York)..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="input pl-10 w-full"
+                />
+              </div>
               
-              <form onSubmit={handleSearch} className="space-y-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                  <input
-                    type="text"
-                    placeholder="Type any city name in the world (e.g., Paris, Tokyo, New York)..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="input pl-10 w-full"
-                  />
-                </div>
-                
-                <div className="text-sm text-gray-600 flex items-center">
-                  <Sparkles className="h-4 w-4 mr-1 text-secondary-500" />
-                  AI will generate comprehensive city data for any location you search
-                </div>
+              <div className="text-sm text-gray-600 flex items-center">
+                <Sparkles className="h-4 w-4 mr-1 text-secondary-500" />
+                AI will generate comprehensive city data for any location you search
+              </div>
 
-                <button type="submit" className="btn-primary">
-                  <Search className="mr-2 h-4 w-4" />
-                  Search Cities
-                </button>
-              </form>
-            </div>
-          </div>
-
-          {/* AI Recommendations */}
-          <div className="lg:col-span-1">
-            <div className="card p-6 h-full">
-              <h2 className="text-xl font-semibold mb-4 flex items-center">
-                <Sparkles className="mr-2 text-secondary-600" />
-                AI Recommendations
-              </h2>
-              
-              <p className="text-gray-600 mb-4">
-                Let our AI suggest perfect destinations based on your preferences
-              </p>
-              
-              <button
-                onClick={() => setShowAIDialog(true)}
-                className="btn-secondary w-full"
-              >
-                <Sparkles className="mr-2 h-4 w-4" />
-                Get AI Suggestions
+              <button type="submit" className="btn-primary">
+                <Search className="mr-2 h-4 w-4" />
+                Search Cities
               </button>
-            </div>
+            </form>
           </div>
         </div>
 

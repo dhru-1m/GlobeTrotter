@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { ArrowLeft, Edit, Calendar, MapPin, DollarSign, Clock, Copy, Globe, Lock } from 'lucide-react';
-import { fetchTrip } from '../store/slices/tripSlice';
+import { ArrowLeft, Edit, Calendar, MapPin, DollarSign, Clock, Copy, Globe, Lock, Trash2 } from 'lucide-react';
+import { fetchTrip, deleteTrip } from '../store/slices/tripSlice';
 import { tripAPI, itineraryAPI, activityAPI } from '../services/api';
 import { toast } from 'react-hot-toast';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -10,7 +10,10 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 const TripDetail = () => {
   const { tripId } = useParams();
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const [sharing, setSharing] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [itineraryData, setItineraryData] = useState(null);
   const [itineraryLoading, setItineraryLoading] = useState(false);
   const [itineraryError, setItineraryError] = useState(null);
@@ -116,6 +119,20 @@ const TripDetail = () => {
     }
   };
 
+  const handleDeleteTrip = async () => {
+    try {
+      setDeleting(true);
+      await dispatch(deleteTrip(tripId)).unwrap();
+      toast.success('Trip deleted successfully');
+      navigate('/trips');
+    } catch (err) {
+      toast.error(err || 'Failed to delete trip');
+    } finally {
+      setDeleting(false);
+      setShowDeleteModal(false);
+    }
+  };
+
   const buildDateRange = (start, end) => {
     const dates = [];
     const cur = new Date(start);
@@ -182,82 +199,92 @@ const TripDetail = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center space-x-4 min-w-0">
           <Link
             to="/trips"
-            className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100"
+            className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 flex-shrink-0"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{trip.name}</h1>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-gray-900 truncate">{trip.name}</h1>
             {trip.description && (
-              <p className="text-gray-600">{trip.description}</p>
+              <p className="text-gray-600 truncate">{trip.description}</p>
             )}
-            <div className="flex items-center mt-2">
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(trip.status)}`}>
+            <div className="flex items-center mt-1.5">
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(trip.status)}`}>
                 {trip.status.charAt(0).toUpperCase() + trip.status.slice(1)}
               </span>
             </div>
           </div>
         </div>
-        <div className="flex space-x-2">
+
+        <div className="flex items-center flex-wrap gap-2 flex-shrink-0">
           {/* Share Button - Different based on public status */}
           {trip.isPublic ? (
-            <div className="flex space-x-2">
+            <>
               <button
                 onClick={copyShareUrl}
-                className="btn-secondary inline-flex items-center"
+                className="btn-secondary inline-flex items-center whitespace-nowrap"
               >
-                <Copy className="h-4 w-4 mr-2" />
+                <Copy className="h-4 w-4 mr-1.5" />
                 Copy Link
               </button>
               <button
                 onClick={handleMakePrivate}
                 disabled={sharing}
-                className="btn-secondary inline-flex items-center text-red-600 hover:text-red-700"
+                className="btn-secondary inline-flex items-center text-red-600 hover:text-red-700 whitespace-nowrap"
               >
-                <Lock className="h-4 w-4 mr-2" />
+                <Lock className="h-4 w-4 mr-1.5" />
                 {sharing ? 'Making Private...' : 'Make Private'}
               </button>
-            </div>
+            </>
           ) : (
             <button
               onClick={handleMakePublic}
               disabled={sharing}
-              className="btn-secondary inline-flex items-center"
+              className="btn-secondary inline-flex items-center whitespace-nowrap"
             >
-              <Globe className="h-4 w-4 mr-2" />
+              <Globe className="h-4 w-4 mr-1.5" />
               {sharing ? 'Sharing...' : 'Make Public'}
             </button>
           )}
           
-          {trip.publicUrl && (
+          {(trip.isPublic || trip.publicUrl) && (
             <Link
-              to={`/public-itinerary/${trip.publicUrl}`}
-              className="btn-secondary inline-flex items-center"
+              to={`/public-itinerary/${trip.publicUrl || trip._id}`}
+              className="btn-secondary inline-flex items-center whitespace-nowrap"
               target="_blank"
               rel="noopener noreferrer"
             >
-              <MapPin className="h-4 w-4 mr-2" />
+              <MapPin className="h-4 w-4 mr-1.5" />
               Public View
             </Link>
           )}
           <Link
             to={`/trips/${tripId}/calendar`}
-            className="btn-secondary inline-flex items-center"
+            className="btn-secondary inline-flex items-center whitespace-nowrap"
           >
-            <Calendar className="h-4 w-4 mr-2" />
+            <Calendar className="h-4 w-4 mr-1.5" />
             Calendar
           </Link>
           <Link
             to={`/trips/${tripId}/edit`}
-            className="btn-primary inline-flex items-center"
+            className="btn-primary inline-flex items-center whitespace-nowrap"
           >
-            <Edit className="h-4 w-4 mr-2" />
+            <Edit className="h-4 w-4 mr-1.5" />
             Edit Trip
           </Link>
+          <button
+            type="button"
+            onClick={() => setShowDeleteModal(true)}
+            className="btn-secondary inline-flex items-center text-red-600 hover:text-red-700 hover:bg-red-50 whitespace-nowrap"
+            title="Delete this trip"
+          >
+            <Trash2 className="h-4 w-4 mr-1.5" />
+            Delete
+          </button>
         </div>
       </div>
 
@@ -327,12 +354,6 @@ const TripDetail = () => {
                   >
                     <Calendar className="h-4 w-4 mr-1" />
                     Calendar View
-                  </Link>
-                  <Link
-                    to={`/trips/${tripId}/itinerary`}
-                    className="text-sm text-primary-600 hover:text-primary-500 font-medium"
-                  >
-                    View Full Details
                   </Link>
                 </div>
               </div>
@@ -410,7 +431,7 @@ const TripDetail = () => {
                     <MapPin className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm text-gray-600">No destinations added yet</p>
                     <Link
-                      to={`/trips/${tripId}/itinerary`}
+                      to={`/trips/${tripId}/calendar`}
                       className="text-sm text-primary-600 hover:text-primary-500 font-medium"
                     >
                       Add destinations
@@ -452,7 +473,7 @@ const TripDetail = () => {
             <div className="card-body">
               <div className="space-y-3">
                 <Link
-                  to={`/trips/${tripId}/itinerary`}
+                  to={`/trips/${tripId}/calendar`}
                   className="block w-full text-left p-3 rounded-md border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-colors duration-200"
                 >
                   <h4 className="font-medium text-gray-900">Edit Itinerary</h4>
@@ -509,6 +530,46 @@ const TripDetail = () => {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center space-x-3 text-red-600">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Delete Trip</h3>
+                <p className="text-xs text-gray-500">This action cannot be undone</p>
+              </div>
+            </div>
+            
+            <p className="text-sm text-gray-600">
+              Are you sure you want to delete <strong className="text-gray-900">"{trip.name}"</strong>? All associated activities, schedule, and itinerary data will be permanently removed.
+            </p>
+
+            <div className="flex justify-end space-x-3 pt-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleting}
+                className="btn-secondary btn-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteTrip}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors flex items-center"
+              >
+                {deleting ? 'Deleting...' : 'Delete Trip'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

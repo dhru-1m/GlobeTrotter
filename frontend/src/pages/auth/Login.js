@@ -13,7 +13,7 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   
-  const { loading, error, isAuthenticated } = useSelector((state) => state.auth);
+  const { loading, error, isAuthenticated, user } = useSelector((state) => state.auth);
   
   const {
     register,
@@ -25,9 +25,10 @@ const Login = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate(from, { replace: true });
+      const destination = (user && user.role !== 'admin' && from.startsWith('/admin')) ? '/dashboard' : from;
+      navigate(destination, { replace: true });
     }
-  }, [isAuthenticated, navigate, from]);
+  }, [isAuthenticated, user, navigate, from]);
 
   useEffect(() => {
     if (error) {

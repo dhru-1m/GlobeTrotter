@@ -23,29 +23,52 @@ const CalendarView = ({
 }) => {
   const [currentDate, setCurrentDate] = useState(new Date(selectedDate));
 
+  const toDateStr = (val) => {
+    if (!val) return null;
+    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+      return val.substring(0, 10);
+    }
+    const d = (val instanceof Date) ? val : new Date(val);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString().split('T')[0];
+  };
+
   // Generate calendar days
   const generateCalendarDays = () => {
-    const startDate = new Date(trip.startDate);
-    const endDate = new Date(trip.endDate);
+    if (!trip?.startDate || !trip?.endDate) return [];
+    const startStr = toDateStr(trip.startDate);
+    const endStr = toDateStr(trip.endDate);
     const days = [];
     
-    const current = new Date(startDate);
-    while (current <= endDate) {
+    let current = new Date(`${startStr}T12:00:00Z`);
+    const end = new Date(`${endStr}T12:00:00Z`);
+    while (current <= end) {
       days.push(new Date(current));
-      current.setDate(current.getDate() + 1);
+      current.setUTCDate(current.getUTCDate() + 1);
     }
     
     return days;
   };
 
-  const groupActivitiesByDate = (list=[]) => list.reduce((acc,a)=>{ if(!a.date) return acc; const ds=new Date(a.date).toISOString().split('T')[0]; (acc[ds]=acc[ds]||[]).push(a); return acc; },{});
+  const groupActivitiesByDate = (list = []) => {
+    return list.reduce((acc, a) => {
+      const ds = toDateStr(a.date);
+      if (!ds) return acc;
+      if (!acc[ds]) acc[ds] = [];
+      acc[ds].push(a);
+      return acc;
+    }, {});
+  };
 
   // Get activities for a specific date
   const getActivitiesForDate = (date) => {
-    const dateStr = date.toISOString().split('T')[0];
-    // Support both old itinerary.days[date].activities and new itinerary.itinerary[date]
-    if (itinerary?.days?.[dateStr]?.activities) return itinerary.days[dateStr].activities;
-    if (itinerary?.itinerary?.[dateStr]) return itinerary.itinerary[dateStr];
+    const dateStr = toDateStr(date);
+    if (itinerary?.itinerary?.[dateStr] && Array.isArray(itinerary.itinerary[dateStr])) {
+      return itinerary.itinerary[dateStr];
+    }
+    if (itinerary?.days?.[dateStr]?.activities && Array.isArray(itinerary.days[dateStr].activities)) {
+      return itinerary.days[dateStr].activities;
+    }
     if (Array.isArray(activities) && activities.length) {
       const grouped = groupActivitiesByDate(activities);
       return grouped[dateStr] || [];
@@ -170,7 +193,7 @@ const CalendarView = ({
                                   <div className="flex items-start justify-between">
                                     <div className="flex-1 min-w-0">
                                       <h4 className="text-sm font-medium text-gray-900 truncate">
-                                        {activity.title}
+                                        {activity.title || activity.name}
                                       </h4>
                                       {(activity.startTime || activity.endTime) && (
                                         <div className="flex items-center mt-1 text-xs text-gray-500">

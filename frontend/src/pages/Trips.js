@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { Plus, MapPin, Calendar, Search } from 'lucide-react';
-import { fetchTrips } from '../store/slices/tripSlice';
+import { Plus, MapPin, Calendar, Search, Trash2 } from 'lucide-react';
+import { fetchTrips, deleteTrip } from '../store/slices/tripSlice';
+import { toast } from 'react-hot-toast';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
 const Trips = () => {
@@ -10,6 +11,8 @@ const Trips = () => {
   const { trips, loading, error } = useSelector((state) => state.trips);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [tripToDelete, setTripToDelete] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     dispatch(fetchTrips({ search: searchQuery, status: statusFilter }));
@@ -21,6 +24,19 @@ const Trips = () => {
 
   const handleStatusChange = (e) => {
     setStatusFilter(e.target.value);
+  };
+
+  const handleDelete = async (tripId) => {
+    try {
+      setDeletingId(tripId);
+      await dispatch(deleteTrip(tripId)).unwrap();
+      toast.success('Trip deleted successfully');
+      setTripToDelete(null);
+    } catch (err) {
+      toast.error(err || 'Failed to delete trip');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const formatDate = (dateString) => {
@@ -105,10 +121,10 @@ const Trips = () => {
       {!loading && !error && trips && trips.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {trips.map((trip) => (
-            <div key={trip._id} className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:border-gray-300 transition-colors duration-150">
+            <div key={trip._id} className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:border-gray-300 transition-colors duration-150 flex flex-col justify-between">
               <div className="p-5">
                 <div className="flex items-start justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-gray-900 truncate mr-2">{trip.name}</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 truncate mr-2" title={trip.name}>{trip.name}</h3>
                   <span className={getStatusBadge(trip.status)}>
                     {trip.status.charAt(0).toUpperCase() + trip.status.slice(1)}
                   </span>
@@ -128,20 +144,29 @@ const Trips = () => {
                     {trip.description}
                   </p>
                 )}
-                <div className="flex space-x-2 pt-3 border-t border-gray-100">
-                  <Link
-                    to={`/trips/${trip._id}`}
-                    className="btn-primary btn-sm flex-1 text-center"
-                  >
-                    View Details
-                  </Link>
-                  <Link
-                    to={`/trips/${trip._id}/edit`}
-                    className="btn-secondary btn-sm"
-                  >
-                    Edit
-                  </Link>
-                </div>
+              </div>
+
+              <div className="px-5 pb-4 pt-3 border-t border-gray-100 flex items-center space-x-2">
+                <Link
+                  to={`/trips/${trip._id}`}
+                  className="btn-primary btn-sm flex-1 text-center"
+                >
+                  View Details
+                </Link>
+                <Link
+                  to={`/trips/${trip._id}/edit`}
+                  className="btn-secondary btn-sm"
+                >
+                  Edit
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setTripToDelete(trip)}
+                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Delete trip"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             </div>
           ))}
@@ -158,16 +183,57 @@ const Trips = () => {
           <p className="text-xs text-gray-500 mb-4">
             {searchQuery || statusFilter 
               ? 'Try adjusting your search criteria or filters.' 
-              : 'Start planning your first adventure!'
-            }
+              : 'Get started by creating your first travel adventure.'}
           </p>
-          <Link
-            to="/trips/create"
-            className="btn-primary btn-sm inline-flex items-center"
-          >
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
-            {searchQuery || statusFilter ? 'Create New Trip' : 'Create Your First Trip'}
-          </Link>
+          {!searchQuery && !statusFilter && (
+            <Link
+              to="/trips/create"
+              className="btn-primary inline-flex items-center btn-sm"
+            >
+              <Plus className="h-4 w-4 mr-1.5" />
+              Create Your First Trip
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {tripToDelete && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center space-x-3 text-red-600">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Delete Trip</h3>
+                <p className="text-xs text-gray-500">This action cannot be undone</p>
+              </div>
+            </div>
+            
+            <p className="text-sm text-gray-600">
+              Are you sure you want to delete <strong className="text-gray-900">"{tripToDelete.name}"</strong>? All associated itinerary activities and details will be permanently removed.
+            </p>
+
+            <div className="flex justify-end space-x-3 pt-3">
+              <button
+                type="button"
+                onClick={() => setTripToDelete(null)}
+                disabled={deletingId === tripToDelete._id}
+                className="btn-secondary btn-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDelete(tripToDelete._id)}
+                disabled={deletingId === tripToDelete._id}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors flex items-center"
+              >
+                {deletingId === tripToDelete._id ? 'Deleting...' : 'Delete Trip'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, MapPin, Calendar, DollarSign, Users, Star, Compass, TrendingUp, Globe } from 'lucide-react';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import { tripAPI } from '../services/api';
 
 const PublicTrips = () => {
   const [trips, setTrips] = useState([]);
@@ -16,52 +17,10 @@ const PublicTrips = () => {
   const fetchPublicTrips = async () => {
     try {
       setLoading(true);
-      // This would need a backend endpoint for fetching public trips
-      // For now, we'll use placeholder data
-      setTrips([
-        {
-          _id: '1',
-          name: 'Tokyo Adventure',
-          description: 'A complete guide to exploring Tokyo\'s best spots',
-          publicUrl: 'tokyo-adventure-2024',
-          user: { firstName: 'Alice', lastName: 'Johnson' },
-          startDate: '2024-03-15',
-          endDate: '2024-03-22',
-          destinations: ['Tokyo', 'Kyoto'],
-          budget: { total: 2500, currency: 'USD' },
-          tags: ['cultural', 'food', 'temples'],
-          status: 'completed',
-          isPublic: true
-        },
-        {
-          _id: '2',
-          name: 'European City Hopping',
-          description: 'The ultimate European adventure across 5 cities',
-          publicUrl: 'europe-cities-2024',
-          user: { firstName: 'Marco', lastName: 'Silva' },
-          startDate: '2024-04-01',
-          endDate: '2024-04-14',
-          destinations: ['Paris', 'Rome', 'Barcelona', 'Amsterdam', 'Berlin'],
-          budget: { total: 3200, currency: 'USD' },
-          tags: ['history', 'art', 'nightlife'],
-          status: 'completed',
-          isPublic: true
-        },
-        {
-          _id: '3',
-          name: 'Bali Wellness Retreat',
-          description: 'A peaceful journey through Bali\'s spiritual side',
-          publicUrl: 'bali-wellness-2024',
-          user: { firstName: 'Sarah', lastName: 'Chen' },
-          startDate: '2024-02-10',
-          endDate: '2024-02-17',
-          destinations: ['Ubud', 'Canggu'],
-          budget: { total: 1200, currency: 'USD' },
-          tags: ['wellness', 'nature', 'yoga'],
-          status: 'completed',
-          isPublic: true
-        }
-      ]);
+      const res = await tripAPI.getPublicTrips();
+      if (res.data?.success && Array.isArray(res.data?.data)) {
+        setTrips(res.data.data);
+      }
     } catch (error) {
       console.error('Error fetching public trips:', error);
     } finally {
@@ -69,20 +28,43 @@ const PublicTrips = () => {
     }
   };
 
+  const getDestinationString = (destinations) => {
+    if (!destinations || !destinations.length) return '';
+    return destinations
+      .map(d => (typeof d === 'string' ? d : d.city || d.name || ''))
+      .filter(Boolean)
+      .join(' • ');
+  };
+
+  const getBudgetTotal = (trip) => {
+    if (!trip?.budget) return 0;
+    if (typeof trip.budget === 'number') return trip.budget;
+    return trip.budget.total || 0;
+  };
+
   const filteredTrips = trips.filter(trip => {
-    const matchesSearch = trip.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         trip.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         trip.destinations.some(dest => dest.toLowerCase().includes(searchTerm.toLowerCase()));
+    const destString = (trip.destinations || [])
+      .map(d => (typeof d === 'string' ? d : `${d.city || ''} ${d.country || ''}`))
+      .join(' ')
+      .toLowerCase();
     
+    const matchesSearch = 
+      (trip.name || trip.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (trip.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      destString.includes(searchTerm.toLowerCase());
+    
+    const budgetTotal = getBudgetTotal(trip);
+
     if (filter === 'all') return matchesSearch;
-    if (filter === 'budget') return matchesSearch && trip.budget.total < 2000;
-    if (filter === 'luxury') return matchesSearch && trip.budget.total >= 2000;
-    if (filter === 'recent') return matchesSearch && new Date(trip.endDate) > new Date('2024-01-01');
+    if (filter === 'budget') return matchesSearch && budgetTotal < 2000;
+    if (filter === 'luxury') return matchesSearch && budgetTotal >= 2000;
+    if (filter === 'recent') return matchesSearch && new Date(trip.endDate || trip.createdAt) > new Date('2024-01-01');
     
     return matchesSearch;
   });
 
   const formatDate = (dateString) => {
+    if (!dateString) return '';
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -99,11 +81,20 @@ const PublicTrips = () => {
   };
 
   const getDuration = (startDate, endDate) => {
+    if (!startDate || !endDate) return 1;
     const start = new Date(startDate);
     const end = new Date(endDate);
     const diffTime = Math.abs(end - start);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
   };
+
+  const uniqueDestinations = [
+    ...new Set(
+      trips.flatMap(trip => 
+        (trip.destinations || []).map(d => (typeof d === 'string' ? d : d.city)).filter(Boolean)
+      )
+    )
+  ];
 
   if (loading) {
     return (
@@ -193,7 +184,7 @@ const PublicTrips = () => {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Destinations Covered</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {[...new Set(trips.flatMap(trip => trip.destinations))].length}
+                  {uniqueDestinations.length || trips.length}
                 </p>
               </div>
             </div>
@@ -219,82 +210,114 @@ const PublicTrips = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredTrips.map((trip) => (
-              <Link
-                key={trip._id}
-                to={`/public-itinerary/${trip.publicUrl}`}
-                className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden group"
-              >
-                {/* Trip Image Placeholder */}
-                <div className="h-48 bg-primary-600 relative">
-                  <div className="absolute inset-0 bg-black bg-opacity-20 group-hover:bg-opacity-30 transition-all duration-200"></div>
-                  <div className="absolute bottom-4 left-4 text-white">
-                    <h3 className="text-xl font-bold">{trip.name}</h3>
-                    <p className="text-sm opacity-90">{trip.destinations.join(' • ')}</p>
-                  </div>
-                  <div className="absolute top-4 right-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      trip.status === 'completed' ? 'bg-green-100 text-green-800' :
-                      trip.status === 'active' ? 'bg-blue-100 text-blue-800' :
-                      'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {trip.status.charAt(0).toUpperCase() + trip.status.slice(1)}
-                    </span>
-                  </div>
-                </div>
-                
-                {/* Trip Info */}
-                <div className="p-6">
-                  <p className="text-gray-600 text-sm mb-4 line-clamp-2">{trip.description}</p>
-                  
-                  <div className="space-y-3 mb-4">
-                    <div className="flex items-center text-sm text-gray-600">
-                      <Calendar className="h-4 w-4 mr-2" />
-                      <span>{formatDate(trip.startDate)} - {formatDate(trip.endDate)}</span>
-                      <span className="ml-2 text-gray-400">({getDuration(trip.startDate, trip.endDate)} days)</span>
+            {filteredTrips.map((trip) => {
+              const destStr = getDestinationString(trip.destinations);
+              const budgetTotal = getBudgetTotal(trip);
+              const currency = trip.budget?.currency || 'USD';
+              const targetUrl = trip.publicUrl || trip._id;
+
+              return (
+                <Link
+                  key={trip._id}
+                  to={`/public-itinerary/${targetUrl}`}
+                  className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden group flex flex-col"
+                >
+                  {/* Trip Image Header */}
+                  <div className="h-48 bg-primary-600 relative overflow-hidden">
+                    {trip.coverPhoto ? (
+                      <img 
+                        src={trip.coverPhoto} 
+                        alt={trip.name} 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-primary-600 to-indigo-700 flex items-center justify-center">
+                        <Globe className="h-16 w-16 text-white opacity-20" />
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black bg-opacity-25 group-hover:bg-opacity-35 transition-all duration-200"></div>
+                    <div className="absolute bottom-4 left-4 right-4 text-white">
+                      <h3 className="text-xl font-bold truncate drop-shadow-sm">{trip.name}</h3>
+                      {destStr && (
+                        <p className="text-sm opacity-90 truncate drop-shadow-sm">{destStr}</p>
+                      )}
                     </div>
-                    
-                    <div className="flex items-center text-sm text-gray-600">
-                      <DollarSign className="h-4 w-4 mr-2" />
-                      <span>Budget: {formatCurrency(trip.budget.total, trip.budget.currency)}</span>
-                    </div>
-                    
-                    <div className="flex items-center text-sm text-gray-600">
-                      <Users className="h-4 w-4 mr-2" />
-                      <span>By {trip.user.firstName} {trip.user.lastName}</span>
-                    </div>
-                  </div>
-                  
-                  {/* Tags */}
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {trip.tags.slice(0, 3).map((tag, index) => (
-                      <span
-                        key={index}
-                        className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
-                      >
-                        #{tag}
-                      </span>
-                    ))}
-                    {trip.tags.length > 3 && (
-                      <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
-                        +{trip.tags.length - 3} more
-                      </span>
+                    {trip.status && (
+                      <div className="absolute top-4 right-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          trip.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          trip.status === 'active' ? 'bg-blue-100 text-blue-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {trip.status.charAt(0).toUpperCase() + trip.status.slice(1)}
+                        </span>
+                      </div>
                     )}
                   </div>
                   
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center text-sm text-gray-500">
-                      <Star className="h-4 w-4 text-yellow-400 mr-1" />
-                      <span>4.8 (24 reviews)</span>
+                  {/* Trip Info */}
+                  <div className="p-6 flex-1 flex flex-col justify-between">
+                    <div>
+                      <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                        {trip.description || 'Discover this amazing travel itinerary with curated activities and sights.'}
+                      </p>
+                      
+                      <div className="space-y-3 mb-4">
+                        <div className="flex items-center text-sm text-gray-600">
+                          <Calendar className="h-4 w-4 mr-2 text-primary-500" />
+                          <span>{formatDate(trip.startDate)} - {formatDate(trip.endDate)}</span>
+                          <span className="ml-2 text-gray-400">({getDuration(trip.startDate, trip.endDate)} days)</span>
+                        </div>
+                        
+                        <div className="flex items-center text-sm text-gray-600">
+                          <DollarSign className="h-4 w-4 mr-2 text-green-500" />
+                          <span>Budget: {formatCurrency(budgetTotal, currency)}</span>
+                        </div>
+                        
+                        <div className="flex items-center text-sm text-gray-600">
+                          <Users className="h-4 w-4 mr-2 text-purple-500" />
+                          <span>
+                            By {trip.user?.firstName 
+                              ? `${trip.user.firstName} ${trip.user.lastName || ''}`.trim() 
+                              : 'Traveler'}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Tags */}
+                      {trip.tags && trip.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {trip.tags.slice(0, 3).map((tag, index) => (
+                            <span
+                              key={index}
+                              className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
+                            >
+                              #{typeof tag === 'string' ? tag : tag.name || 'tag'}
+                            </span>
+                          ))}
+                          {trip.tags.length > 3 && (
+                            <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+                              +{trip.tags.length - 3} more
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     
-                    <div className="text-primary-600 font-medium text-sm group-hover:text-primary-700">
-                      View Itinerary →
+                    <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                      <div className="flex items-center text-sm text-gray-500">
+                        <Star className="h-4 w-4 text-yellow-400 fill-current mr-1" />
+                        <span>4.9 Featured</span>
+                      </div>
+                      
+                      <div className="text-primary-600 font-medium text-sm group-hover:text-primary-700">
+                        View Itinerary →
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </div>
         )}
 

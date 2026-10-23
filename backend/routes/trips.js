@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const { body, validationResult } = require('express-validator');
 const Trip = require('../models/Trip');
 const Activity = require('../models/Activity');
@@ -6,15 +7,47 @@ const geminiService = require('../services/geminiService');
 
 const router = express.Router();
 
+// Helper to find a public trip by publicUrl or _id
+const findPublicTrip = (identifier) => {
+  const query = { isPublic: true };
+  if (mongoose.isValidObjectId(identifier)) {
+    query.$or = [{ publicUrl: identifier }, { _id: identifier }];
+  } else {
+    query.publicUrl = identifier;
+  }
+  return Trip.findOne(query);
+};
+
+// @route   GET /api/trips/public
+// @desc    Get all public trips
+// @access  Public
+router.get('/public', async (req, res) => {
+  try {
+    const trips = await Trip.find({ isPublic: true })
+      .populate('user', 'firstName lastName email username profilePicture')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: trips.length,
+      data: trips
+    });
+  } catch (error) {
+    console.error('Get public trips error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
 // @route   GET /api/trips/public/:publicUrl
-// @desc    Get public trip by public URL
+// @desc    Get public trip by public URL or ID
 // @access  Public
 router.get('/public/:publicUrl', async (req, res) => {
   try {
-    const trip = await Trip.findOne({ 
-      publicUrl: req.params.publicUrl,
-      isPublic: true 
-    }).populate('destinations').populate('user', 'firstName lastName email username profilePicture');
+    const trip = await findPublicTrip(req.params.publicUrl)
+      .populate('user', 'firstName lastName email username profilePicture');
 
     if (!trip) {
       return res.status(404).json({
@@ -41,10 +74,8 @@ router.get('/public/:publicUrl', async (req, res) => {
 // @access  Public
 router.get('/public/:publicUrl/itinerary', async (req, res) => {
   try {
-    const trip = await Trip.findOne({ 
-      publicUrl: req.params.publicUrl,
-      isPublic: true 
-    }).populate('destinations').populate('user', 'firstName lastName email username profilePicture');
+    const trip = await findPublicTrip(req.params.publicUrl)
+      .populate('user', 'firstName lastName email username profilePicture');
 
     if (!trip) {
       return res.status(404).json({
@@ -54,7 +85,7 @@ router.get('/public/:publicUrl/itinerary', async (req, res) => {
     }
 
     // Get all activities for this trip
-    const activities = await Activity.find({ trip: trip._id }).sort({ date: 1, time: 1 });
+    const activities = await Activity.find({ trip: trip._id }).sort({ date: 1, startTime: 1, time: 1 });
 
     // Group activities by date
     const itinerary = {};
@@ -62,20 +93,28 @@ router.get('/public/:publicUrl/itinerary', async (req, res) => {
     const endDate = new Date(trip.endDate);
     
     // Initialize each day
-    const current = new Date(startDate);
-    while (current <= endDate) {
-      const dateStr = current.toISOString().split('T')[0];
-      itinerary[dateStr] = {
-        date: new Date(current),
-        activities: []
-      };
-      current.setDate(current.getDate() + 1);
+    if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+      const current = new Date(startDate);
+      while (current <= endDate) {
+        const dateStr = current.toISOString().split('T')[0];
+        itinerary[dateStr] = {
+          date: new Date(current),
+          activities: []
+        };
+        current.setDate(current.getDate() + 1);
+      }
     }
 
     // Group activities by date
     activities.forEach(activity => {
-      const dateStr = activity.date.toISOString().split('T')[0];
-      if (itinerary[dateStr]) {
+      if (activity.date) {
+        const dateStr = new Date(activity.date).toISOString().split('T')[0];
+        if (!itinerary[dateStr]) {
+          itinerary[dateStr] = {
+            date: new Date(activity.date),
+            activities: []
+          };
+        }
         itinerary[dateStr].activities.push(activity);
       }
     });
@@ -104,10 +143,7 @@ router.get('/public/:publicUrl/itinerary', async (req, res) => {
 router.post('/public/:publicUrl/copy', async (req, res) => {
   try {
     // Find the public trip
-    const originalTrip = await Trip.findOne({ 
-      publicUrl: req.params.publicUrl,
-      isPublic: true 
-    }).populate('destinations');
+    const originalTrip = await findPublicTrip(req.params.publicUrl);
 
     if (!originalTrip) {
       return res.status(404).json({
@@ -136,13 +172,18 @@ router.post('/public/:publicUrl/copy', async (req, res) => {
     const originalActivities = await Activity.find({ trip: originalTrip._id });
     const activityCopies = originalActivities.map(activity => ({
       trip: tripCopy._id,
-      name: activity.name,
+      title: activity.title || activity.name,
       description: activity.description,
-      type: activity.type,
+      type: activity.type || 'sightseeing',
+      destination: activity.destination || (originalTrip.destinations?.[0] ? {
+        city: originalTrip.destinations[0].city,
+        country: originalTrip.destinations[0].country
+      } : { city: 'Destination', country: 'Country' }),
       location: activity.location,
       date: activity.date,
-      time: activity.time,
-      duration: activity.duration,
+      startTime: activity.startTime || activity.time || '09:00',
+      endTime: activity.endTime || '11:00',
+      duration: activity.duration || 120,
       cost: activity.cost,
       rating: activity.rating,
       tags: activity.tags,
@@ -158,7 +199,7 @@ router.post('/public/:publicUrl/copy', async (req, res) => {
       message: 'Trip copied successfully',
       data: {
         tripId: tripCopy._id,
-        name: tripCopy.name
+        trip: tripCopy
       }
     });
   } catch (error) {
@@ -492,13 +533,13 @@ router.put('/:id', [
       });
     }
 
-    const { name, description, startDate, endDate, coverPhoto, tags, status, isPublic } = req.body;
+    const { name, description, startDate, endDate, coverPhoto, tags, status, isPublic, budget, destinations } = req.body;
 
     // Validate dates if both are provided
-    if (startDate && endDate && new Date(startDate) >= new Date(endDate)) {
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
       return res.status(400).json({
         success: false,
-        message: 'End date must be after start date'
+        message: 'End date must be after or equal to start date'
       });
     }
 
@@ -512,6 +553,30 @@ router.put('/:id', [
       status,
       isPublic
     };
+
+    if (destinations !== undefined) {
+      updateFields.destinations = destinations;
+    }
+
+    if (budget !== undefined) {
+      if (typeof budget === 'number') {
+        updateFields.budget = {
+          total: budget,
+          currency: trip.budget?.currency || 'USD'
+        };
+      } else if (typeof budget === 'object') {
+        updateFields.budget = {
+          ...(trip.budget?.toObject ? trip.budget.toObject() : trip.budget || {}),
+          ...budget
+        };
+      }
+    }
+
+    // Generate publicUrl if made public and none exists
+    if (isPublic && !trip.publicUrl) {
+      const crypto = require('crypto');
+      updateFields.publicUrl = crypto.randomBytes(16).toString('hex');
+    }
 
     // Remove undefined fields
     Object.keys(updateFields).forEach(key => 
@@ -577,42 +642,6 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// @route   GET /api/trips/public/:publicUrl
-// @desc    Get public trip
-// @access  Public
-router.get('/public/:publicUrl', async (req, res) => {
-  try {
-    const trip = await Trip.findOne({ 
-      publicUrl: req.params.publicUrl,
-      isPublic: true 
-    }).populate('destinations');
-
-    if (!trip) {
-      return res.status(404).json({
-        success: false,
-        message: 'Public trip not found'
-      });
-    }
-
-    // Get activities for this trip
-    const activities = await Activity.find({ trip: trip._id })
-      .sort({ date: 1, startTime: 1 });
-
-    res.status(200).json({
-      success: true,
-      data: {
-        ...trip.toObject(),
-        activities
-      }
-    });
-  } catch (error) {
-    console.error('Get public trip error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error'
-    });
-  }
-});
 
 // @route   POST /api/trips/:id/collaborators
 // @desc    Add collaborator to trip

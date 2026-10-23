@@ -40,11 +40,11 @@ const ActivityEditModal = ({ isOpen, onClose, activity, tripId, onUpdate }) => {
   useEffect(() => {
     if (activity) {
       setFormData({
-        name: activity.name || '',
+        name: activity.title || activity.name || '',
         description: activity.description || '',
         type: activity.type || '',
-        location: activity.location || '',
-        time: activity.time || '',
+        location: typeof activity.location === 'object' ? (activity.location?.name || activity.location?.address || '') : (activity.location || activity.destination?.city || ''),
+        time: activity.startTime || activity.time || '',
         duration: activity.duration || '',
         cost: {
           amount: activity.cost?.amount || 0,
@@ -151,6 +151,7 @@ const ActivityEditModal = ({ isOpen, onClose, activity, tripId, onUpdate }) => {
     try {
       const activityData = {
         ...formData,
+        title: formData.name,
         trip: tripId,
         duration: formData.duration ? parseFloat(formData.duration) : undefined,
         rating: formData.rating ? parseFloat(formData.rating) : undefined

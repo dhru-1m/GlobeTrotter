@@ -132,12 +132,30 @@ const PublicItinerary = () => {
 
   const formatTime = (timeString) => {
     if (!timeString) return '';
-    const time = new Date(`2000-01-01T${timeString}`);
-    return time.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
+    if (typeof timeString !== 'string') return '';
+    if (timeString.includes('AM') || timeString.includes('PM')) return timeString;
+    const parts = timeString.split(':');
+    if (parts.length >= 2) {
+      const hour = parseInt(parts[0], 10);
+      const min = parts[1].padStart(2, '0');
+      if (!isNaN(hour)) {
+        const ampm = hour >= 12 ? 'PM' : 'AM';
+        const h12 = hour % 12 || 12;
+        return `${h12}:${min} ${ampm}`;
+      }
+    }
+    return timeString;
+  };
+
+  const formatDuration = (val) => {
+    if (!val) return '';
+    if (typeof val === 'string') return val;
+    if (val >= 60) {
+      const hours = Math.floor(val / 60);
+      const mins = val % 60;
+      return `${hours}h${mins > 0 ? ` ${mins}m` : ''}`;
+    }
+    return `${val} mins`;
   };
 
   const formatCurrency = (amount, currency = 'USD') => {
@@ -152,12 +170,15 @@ const PublicItinerary = () => {
     const colors = {
       accommodation: 'bg-purple-100 text-purple-800',
       transportation: 'bg-blue-100 text-blue-800',
+      transport: 'bg-blue-100 text-blue-800',
       dining: 'bg-orange-100 text-orange-800',
+      food: 'bg-orange-100 text-orange-800',
       entertainment: 'bg-pink-100 text-pink-800',
       sightseeing: 'bg-green-100 text-green-800',
       shopping: 'bg-yellow-100 text-yellow-800',
       adventure: 'bg-red-100 text-red-800',
       cultural: 'bg-indigo-100 text-indigo-800',
+      culture: 'bg-indigo-100 text-indigo-800',
       relaxation: 'bg-teal-100 text-teal-800',
       default: 'bg-gray-100 text-gray-800'
     };
@@ -256,22 +277,34 @@ const PublicItinerary = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           <div className="lg:col-span-2 space-y-6">
             {/* Cover Photo */}
-            {trip.coverPhoto && (
-              <div className="relative h-64 rounded-md overflow-hidden">
+            {/* Cover Photo / Hero Banner */}
+            <div className="relative h-64 rounded-xl overflow-hidden shadow-sm">
+              {trip.coverPhoto ? (
                 <img 
                   src={trip.coverPhoto} 
                   alt={trip.name}
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute inset-0 bg-black bg-opacity-20"></div>
-                <div className="absolute bottom-4 left-4 text-white">
-                  <h2 className="text-2xl font-bold">{trip.name}</h2>
-                  <p className="text-sm opacity-90">
-                    {formatDate(trip.startDate)} - {formatDate(trip.endDate)}
-                  </p>
+              ) : (
+                <div className="w-full h-full bg-gradient-to-r from-primary-600 via-indigo-600 to-purple-700 flex items-center justify-center">
+                  <Globe className="h-24 w-24 text-white opacity-20" />
                 </div>
+              )}
+              <div className="absolute inset-0 bg-black bg-opacity-30"></div>
+              <div className="absolute bottom-6 left-6 right-6 text-white">
+                <h2 className="text-3xl font-bold drop-shadow-md">{trip.name}</h2>
+                <p className="text-sm opacity-95 flex items-center mt-1 drop-shadow-sm">
+                  <Calendar className="h-4 w-4 mr-2" />
+                  {formatDate(trip.startDate)} - {formatDate(trip.endDate)}
+                </p>
+                {trip.destinations && trip.destinations.length > 0 && (
+                  <p className="text-xs opacity-90 mt-1 flex items-center">
+                    <MapPin className="h-3.5 w-3.5 mr-1" />
+                    {trip.destinations.map(d => typeof d === 'string' ? d : `${d.city}${d.country ? `, ${d.country}` : ''}`).filter(Boolean).join(' • ')}
+                  </p>
+                )}
               </div>
-            )}
+            </div>
 
             {/* Trip Description */}
             {trip.description && (
@@ -394,7 +427,7 @@ const PublicItinerary = () => {
                   <div className="flex flex-wrap gap-2">
                     {trip.tags.map((tag, index) => (
                       <span key={index} className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
-                        #{tag}
+                        #{typeof tag === 'string' ? tag : tag.name || 'tag'}
                       </span>
                     ))}
                   </div>
@@ -506,7 +539,7 @@ const PublicItinerary = () => {
                               >
                                 <div className="flex items-start justify-between mb-2">
                                   <h4 className="text-lg font-medium text-gray-900">
-                                    {activity.name}
+                                    {activity.title || activity.name || 'Activity'}
                                   </h4>
                                   {activity.rating && (
                                     <div className="flex items-center">
@@ -523,32 +556,35 @@ const PublicItinerary = () => {
                                 )}
                                 
                                 <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 mb-3">
-                                  {activity.time && (
+                                  {(activity.time || activity.startTime) && (
                                     <div className="flex items-center">
-                                      <Clock className="h-4 w-4 mr-1" />
-                                      {formatTime(activity.time)}
+                                      <Clock className="h-4 w-4 mr-1 text-primary-500" />
+                                      {formatTime(activity.time || activity.startTime)}
+                                      {activity.endTime && ` - ${formatTime(activity.endTime)}`}
                                     </div>
                                   )}
                                   
                                   {activity.location && (
                                     <div className="flex items-center">
-                                      <MapPin className="h-4 w-4 mr-1" />
+                                      <MapPin className="h-4 w-4 mr-1 text-red-500" />
                                       <span className="truncate max-w-xs">
-                                        {activity.location}
+                                        {typeof activity.location === 'object'
+                                          ? (activity.location.name || activity.location.address || 'Location')
+                                          : activity.location}
                                       </span>
                                     </div>
                                   )}
                                   
                                   {activity.duration && (
                                     <div className="flex items-center">
-                                      <Users className="h-4 w-4 mr-1" />
-                                      {activity.duration} hours
+                                      <Clock className="h-4 w-4 mr-1 text-blue-500" />
+                                      {formatDuration(activity.duration)}
                                     </div>
                                   )}
                                   
                                   {activity.cost?.amount > 0 && (
                                     <div className="flex items-center">
-                                      <DollarSign className="h-4 w-4 mr-1" />
+                                      <DollarSign className="h-4 w-4 mr-1 text-green-500" />
                                       {formatCurrency(activity.cost.amount, activity.cost.currency)}
                                     </div>
                                   )}
@@ -566,7 +602,7 @@ const PublicItinerary = () => {
                                       key={index}
                                       className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
                                     >
-                                      {tag}
+                                      #{typeof tag === 'object' ? tag.name : tag}
                                     </span>
                                   ))}
                                 </div>

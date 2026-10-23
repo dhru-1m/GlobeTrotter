@@ -2,13 +2,13 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Trip = require('../models/Trip');
 const Activity = require('../models/Activity');
-const generateSampleBudgetData = require('../utils/sampleBudgetData');
+const { estimateBudget } = require('../utils/budgetEngine');
 const geminiService = require('../services/geminiService');
 
 const router = express.Router();
 
 // @route   GET /api/budget/:tripId
-// @desc    Get budget breakdown for a trip
+// @desc    Get dynamic budget breakdown for a trip
 // @access  Private
 router.get('/:tripId', async (req, res) => {
   try {
@@ -33,33 +33,16 @@ router.get('/:tripId', async (req, res) => {
     // Get all activities for this trip
     const activities = await Activity.find({ trip: trip._id });
 
-    // Generate sample budget data
-    const sampleData = generateSampleBudgetData(trip.startDate, trip.endDate);
-    const { breakdown, dailyBreakdown, total, tripDays } = sampleData;
+    // Parse optional query params
+    const travelStyle = req.query.travelStyle || 'moderate';
+    const groupSize   = parseInt(req.query.groupSize) || 1;
 
-    // Add real activity costs to the sample data
-    activities.forEach(activity => {
-      const date = activity.date.toISOString().split('T')[0];
-      if (dailyBreakdown[date]) {
-        const activityCost = activity.cost.amount || 0;
-        dailyBreakdown[date].activities += activityCost;
-        dailyBreakdown[date].total += activityCost;
-        breakdown.activities += activityCost;
-      }
-    });
+    // Run the dynamic budget engine
+    const budgetData = estimateBudget(trip, activities, { travelStyle, groupSize });
 
     res.status(200).json({
       success: true,
-      data: {
-        tripId: trip._id,
-        tripName: trip.name,
-        currency: trip.budget.currency,
-        total,
-        breakdown,
-        dailyBreakdown,
-        activities: activities.length,
-        tripDays
-      }
+      data: budgetData
     });
   } catch (error) {
     console.error('Get budget error:', error);
@@ -80,7 +63,7 @@ router.put('/:tripId', [
     .withMessage('Total budget must be a positive number'),
   body('currency')
     .optional()
-    .isIn(['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD'])
+    .isIn(['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'INR'])
     .withMessage('Invalid currency'),
   body('breakdown.accommodation')
     .optional()
@@ -134,6 +117,7 @@ router.put('/:tripId', [
       if (breakdown.accommodation !== undefined) trip.budget.breakdown.accommodation = breakdown.accommodation;
       if (breakdown.transportation !== undefined) trip.budget.breakdown.transportation = breakdown.transportation;
       if (breakdown.food !== undefined) trip.budget.breakdown.food = breakdown.food;
+      if (breakdown.activities !== undefined) trip.budget.breakdown.activities = breakdown.activities;
       if (breakdown.other !== undefined) trip.budget.breakdown.other = breakdown.other;
     }
 
@@ -190,14 +174,16 @@ router.post('/:tripId/ai-generate', async (req, res) => {
       const accommodation = b.accommodation?.total || 0;
       const transportation = b.transportation?.total || 0;
       const food = b.food?.total || 0;
-      const other = (b.miscellaneous?.total || 0) + (b.activities?.total || 0);
-      const total = aiBudget.grandTotal || (accommodation + transportation + food + other);
+      const activities = b.activities?.total || 0;
+      const other = (b.miscellaneous?.total || 0);
+      const total = aiBudget.grandTotal || (accommodation + transportation + food + activities + other);
 
       trip.budget.total = total;
       trip.budget.breakdown = {
         accommodation,
         transportation,
         food,
+        activities,
         other
       };
       await trip.save();
@@ -246,6 +232,11 @@ router.get('/:tripId/forecast', async (req, res) => {
     // Get activities
     const activities = await Activity.find({ trip: trip._id });
 
+    // Run budget engine for forecast comparison
+    const travelStyle = req.query.travelStyle || 'moderate';
+    const groupSize   = parseInt(req.query.groupSize) || 1;
+    const estimate = estimateBudget(trip, activities, { travelStyle, groupSize });
+
     // Calculate current spending
     const currentSpending = activities.reduce((total, activity) => {
       return total + (activity.cost.amount || 0);
@@ -255,24 +246,13 @@ router.get('/:tripId/forecast', async (req, res) => {
     const remainingBudget = totalBudget - currentSpending;
     const spendingPercentage = totalBudget > 0 ? (currentSpending / totalBudget) * 100 : 0;
 
-    // Generate recommendations
-    const recommendations = [];
-
-    if (spendingPercentage > 80) {
-      recommendations.push({
-        type: 'warning',
-        message: 'You\'ve used over 80% of your budget. Consider reducing expenses.',
-        category: 'budget'
-      });
-    }
-
-    if (spendingPercentage > 100) {
-      recommendations.push({
-        type: 'danger',
-        message: 'You\'ve exceeded your budget. Review your expenses.',
-        category: 'budget'
-      });
-    }
+    // Generate recommendations from the engine's suggestions
+    const recommendations = estimate.suggestions.map(s => ({
+      type: s.type,
+      message: s.message,
+      category: s.category,
+      potentialSaving: s.potentialSaving || 0,
+    }));
 
     // Check for expensive activities
     const expensiveActivities = activities.filter(activity => 
@@ -307,7 +287,9 @@ router.get('/:tripId/forecast', async (req, res) => {
         currentSpending,
         remainingBudget,
         spendingPercentage,
+        estimatedTotal: estimate.total,
         recommendations,
+        savingTips: estimate.savingTips,
         tripDays,
         daysWithActivities,
         freeDays,
@@ -362,7 +344,7 @@ router.get('/:tripId/export', async (req, res) => {
       activities: activities.map(activity => ({
         title: activity.title,
         date: activity.date,
-        location: activity.location.name,
+        location: activity.location?.name || '',
         cost: activity.cost,
         type: activity.type
       })),
@@ -387,4 +369,4 @@ router.get('/:tripId/export', async (req, res) => {
   }
 });
 
-module.exports = router; 
+module.exports = router;

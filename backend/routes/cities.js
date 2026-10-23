@@ -353,13 +353,36 @@ router.post('/ai-search', async (req, res) => {
         });
       }
 
-      // Normalize attractions: ensure at least 10 (duplicate if needed) and cap to 15
+      // Normalize attractions: ensure at least 10 and cap to 15
       if (!Array.isArray(aiCityData.attractions)) aiCityData.attractions = [];
-      // Filter out malformed entries without name
       aiCityData.attractions = aiCityData.attractions.filter(a => a && a.name);
-  // If still fewer than 10 after retries, leave as-is (prefer accuracy over duplication)
       if (aiCityData.attractions.length > 15) {
         aiCityData.attractions = aiCityData.attractions.slice(0, 15);
+      }
+
+      // Try caching to MongoDB asynchronously so future searches are instant
+      try {
+        const { _id, __v, createdAt, updatedAt, attractions, images, ...restData } = aiCityData;
+        const cleanAttractions = (attractions || []).map(a => {
+          const { _id: aId, ...restA } = a;
+          return restA;
+        });
+        const cleanImages = (images || []).map(img => {
+          const { _id: imgId, ...restImg } = img;
+          return restImg;
+        });
+        const cityToSave = new City({
+          ...restData,
+          attractions: cleanAttractions,
+          images: cleanImages,
+          isActive: true
+        });
+        const savedCity = await cityToSave.save();
+        if (savedCity) {
+          aiCityData._id = savedCity._id;
+        }
+      } catch (saveErr) {
+        console.warn('Note: Could not cache AI city to DB:', saveErr.message);
       }
 
       res.status(200).json({
@@ -412,7 +435,28 @@ router.get('/:cityName/ai-attractions', async (req, res) => {
   try {
     const { cityName } = req.params;
     if (!cityName || !cityName.trim()) return res.status(400).json({ success: false, message: 'cityName required' });
+
+    // Check if city in DB already has rich attractions (>= 5)
+    const existing = await City.findOne({
+      name: { $regex: new RegExp(`^${cityName.trim()}$`, 'i') },
+      isActive: true
+    });
+    if (existing && existing.attractions && existing.attractions.length >= 5) {
+      return res.json({ success: true, source: 'database', city: cityName.trim(), attractions: existing.attractions });
+    }
+
     const attractions = await geminiService.generateCityAttractions(cityName.trim());
+
+    // Update DB if city exists but had incomplete attractions
+    if (existing && attractions && attractions.length > 0) {
+      try {
+        existing.attractions = attractions;
+        await existing.save();
+      } catch (saveErr) {
+        console.warn('Note: Could not update city attractions in DB:', saveErr.message);
+      }
+    }
+
     res.json({ success: true, source: 'gemini', city: cityName.trim(), attractions });
   } catch (err) {
     console.error('AI attractions error:', err.message);

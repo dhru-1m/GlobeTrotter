@@ -10,14 +10,15 @@ const router = express.Router();
 // @access  Private
 router.get('/', async (req, res) => {
   try {
-    const { tripId, date, type, destination } = req.query;
+    const { tripId, trip, date, type, destination } = req.query;
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+    const limit = parseInt(req.query.limit) || 100;
 
     const query = {};
 
-    if (tripId) {
-      query.trip = tripId;
+    const effectiveTripId = tripId || trip;
+    if (effectiveTripId) {
+      query.trip = effectiveTripId;
     }
 
     if (date) {

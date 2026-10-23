@@ -19,7 +19,7 @@ const adminRoutes = require('./routes/admin');
 const imagesRoutes = require('./routes/images');
 
 const errorHandler = require('./middleware/errorHandler');
-const { auth } = require('./middleware/auth');
+const { auth, optionalAuth } = require('./middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -76,7 +76,12 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API routes
 app.use('/api/auth', authRoutes);
-app.use('/api/trips', auth, tripRoutes);
+app.use('/api/trips', (req, res, next) => {
+  if (req.path.startsWith('/public') && req.method === 'GET') {
+    return optionalAuth(req, res, next);
+  }
+  return auth(req, res, next);
+}, tripRoutes);
 app.use('/api/itinerary', auth, itineraryRoutes);
 app.use('/api/users', auth, userRoutes);
 app.use('/api/activities', activityRoutes);
@@ -84,9 +89,6 @@ app.use('/api/cities', cityRoutes);
 app.use('/api/budget', auth, budgetRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/images', imagesRoutes);
-
-// Public routes (no auth required)
-app.use('/api/trips/public', tripRoutes);
 
 // Error handling middleware
 app.use(errorHandler);
